@@ -1,0 +1,217 @@
+// Written by Orel Fichman, 21-22/02/2020
+// Free to use and modify as you wish
+// Import NeoPixel library
+#include <adafruit_neopixel.h>
+
+
+// Pin position variables
+const int matrixPin = 9;
+const int ledCount = 64;
+const int colorIntensity = 50;
+const int leftButtonPin = 5;
+const int rightButtonPin = 7;
+
+
+// Initial player position on the board (address on the LED matrix)
+int playerLeftAvatarPosition = 59;
+int playerRightAvatarPosition = 60;
+
+
+// Define matrix in a variable
+Adafruit_NeoPixel pixels = Adafruit_NeoPixel(ledCount, matrixPin, NEO_GRB + NEO_KHZ800);
+
+
+// Define enemy, player and background colors
+uint32_t playerColor = pixels.Color(0,colorIntensity,0);
+uint32_t enemyColor = pixels.Color(colorIntensity,0,0);
+uint32_t backgroundColor = pixels.Color(0,0,0);
+
+
+// Define how sensitive the controls will be for long presses
+int sensitivityDelay = 95;
+
+
+// Define game variables
+int amountOfEnemies = 1;
+const int maxEnemies = 4;
+int enemyPositions[maxEnemies];
+int enemyMoveSpeed = 93;
+int score = -(maxEnemies)+2; // Defined this way due to a weird bug I couldn't solve
+bool playerLost = false;
+const int enemySpawnSpeed = 521; // Enemy spawn speed
+
+
+// X shape array to display when the player loses
+int topLeftToBottomRight[] = {0,9,18,27,36,45,54,63};
+int bottomLeftToTopRight[] = {56,49,42,35,28,21,14,7};
+
+
+// Reset fucntion to later bind to an event
+void(* reset) (void) = 0;
+
+
+void moveLeft(int leftPosition, int rightPosition) {
+  // Make sure player doesn't move into the 2nd row
+  if(!(playerLeftAvatarPosition == 56)) {
+    // Offset player to the left
+    pixels.setPixelColor(playerLeftAvatarPosition, backgroundColor);
+    pixels.setPixelColor(playerRightAvatarPosition, backgroundColor);
+    playerLeftAvatarPosition--;
+    playerRightAvatarPosition--;
+    pixels.setPixelColor(playerLeftAvatarPosition, playerColor);
+    pixels.setPixelColor(playerRightAvatarPosition, playerColor);
+    // Apply changes to the grid
+    pixels.show();
+  }
+}
+
+
+void moveRight(int leftPosition, int rightPosition) {
+  // Make sure player doesn't leave the matrix
+  if (!(playerRightAvatarPosition == 63)) {
+    // Offset player to the right
+    pixels.setPixelColor(playerLeftAvatarPosition, backgroundColor);
+    pixels.setPixelColor(playerRightAvatarPosition, backgroundColor);
+    playerLeftAvatarPosition++;
+    playerRightAvatarPosition++;
+    pixels.setPixelColor(playerLeftAvatarPosition, playerColor);
+    pixels.setPixelColor(playerRightAvatarPosition, playerColor);
+    // Apply changes to the grid
+    pixels.show();
+  }
+}
+
+
+void spawnEnemy() {
+      // Run for amount of current enemies (initializes at 1) - This only runs in the early stages of the game, resetDeadEnemy() takes care of respawning later
+      for (int i = 0; i < amountOfEnemies; i++) {
+        int enemyRandomPosition = random(1,9);
+        Serial.println("Trying to spawn");
+        // Check if enemy already exists in this column
+        if ((enemyPositions[i] % 8) != enemyRandomPosition) {
+          amountOfEnemies++;
+          pixels.setPixelColor(enemyRandomPosition-1, enemyColor);
+          enemyPositions[i] = enemyRandomPosition;
+          Serial.println("Spawning");
+          delay(1);
+          pixels.show();
+          break;
+        }
+     }
+}
+
+
+void moveEnemies() {
+  // Move all enemies on board
+  for(int i=0; i < maxEnemies; i++) {
+    pixels.setPixelColor(enemyPositions[i]-1, backgroundColor);
+    enemyPositions[i] = enemyPositions[i] + 8;
+    pixels.setPixelColor(enemyPositions[i]-1, enemyColor);
+    pixels.show();
+    // Enemy respawning is handled within the resetDeadEnemy() function
+    resetDeadEnemy(i);
+  }
+  Serial.println("Moving");
+}
+
+
+void resetDeadEnemy(int num) {
+  if (enemyPositions[num] >= 75) {
+      // Respawn enemy with a random offset if the enemy is behind the player, reduce enemy from amount of enemies and add a point to the player's score
+      enemyPositions[num] = random(-100,-50);
+      amountOfEnemies--;
+      score++;
+      Serial.println("Resetting");
+      Serial.println(score);
+  }
+  pixels.show();
+}
+
+
+void checkLoss() {
+  // Check if any of the enemies hit the player
+  for(int i = 0; i < maxEnemies; i++) {
+    if((enemyPositions[i] == playerLeftAvatarPosition+1) or (enemyPositions[i] == playerRightAvatarPosition+1)) {
+      playerLost = true;
+      // Flash big X
+      for (int flashTimes = 0; flashTimes < 3; flashTimes++) {
+        for(int led = 0; led < ledCount; led++) {
+          pixels.setPixelColor(led, backgroundColor);
+        }
+        pixels.show();
+        delay(300);
+        for(int i = 0; i < 8; i++) {
+          pixels.setPixelColor(topLeftToBottomRight[i], enemyColor);
+          pixels.setPixelColor(bottomLeftToTopRight[i], enemyColor);
+        }
+        pixels.show();
+        delay(300);
+      }
+      Serial.println(score);
+    }
+  }
+}
+
+
+void setup() {
+  Serial.begin(9600);
+  pinMode(matrixPin, OUTPUT);
+  pinMode(leftButtonPin, INPUT_PULLUP);
+  pinMode(rightButtonPin, INPUT_PULLUP);
+  pixels.begin(); // Initialize LED matrix
+  // Set background color to all LEDs
+  for (int i = 0; i < ledCount; i++) {
+     pixels.setPixelColor(i, backgroundColor);
+  }
+  // Spawn player
+  pixels.setPixelColor(playerLeftAvatarPosition, playerColor);
+  pixels.setPixelColor(playerRightAvatarPosition, playerColor);
+  pixels.show();
+  delay(1000);
+}
+
+
+void loop() {
+  // Determine if player wants to move left
+  if(!(digitalRead(leftButtonPin)) and (digitalRead(rightButtonPin)) and millis() % sensitivityDelay <= 2) {
+    moveLeft(playerLeftAvatarPosition, playerRightAvatarPosition);
+    delay(1);
+  }
+
+  
+  // Determine if player wants to move right
+  if(!(digitalRead(rightButtonPin)) and (digitalRead(leftButtonPin)) and millis() % sensitivityDelay <= 2) {
+    moveRight(playerLeftAvatarPosition, playerRightAvatarPosition);
+    delay(1);
+  }
+
+  
+  // Determine if max enemies are present, if not - spawns an enemy (only happens in the early stages of the game)
+  if((millis() % enemySpawnSpeed <= 3) and amountOfEnemies <= maxEnemies) {
+    spawnEnemy();
+    delay(2);
+  }
+
+  // Move enemies
+  if(millis() % enemyMoveSpeed <= 2) {
+    moveEnemies();
+    delay(2);
+  }
+
+  // Check if player just lost
+  if (playerLost == false) {
+    checkLoss();
+  }
+  // Execute if player lost, make all LEDs background color and wait for signal to reset the game
+  else {
+    while (true) {
+        for (int i = 0; i < ledCount; i++) {
+          pixels.setPixelColor(i, backgroundColor);
+     }
+     pixels.show();
+     if(!digitalRead(leftButtonPin)) {
+      reset();
+     }
+    }
+  }
+}
